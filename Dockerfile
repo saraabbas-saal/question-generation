@@ -1,31 +1,38 @@
-FROM python:3.10-slim
+# Use Python 3.11 slim image as base
+FROM python:3.11-slim
 
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Set work directory
 WORKDIR /app
 
-EXPOSE 5056
+# Install system dependencies
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        curl \
+        && rm -rf /var/lib/apt/lists/*
 
-# Install system dependencies needed for building Python packages
-RUN apt-get update && \
-    apt-get install -y gcc g++ make curl && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy the requirements file
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
 # Install Python dependencies
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the download script
-COPY download_model.py download_model.py
-
-# Make the script executable
-RUN chmod +x download_model.py
-
-# Download the model during build time
-RUN python download_model.py
-# Copy the rest of the application
+# Copy application code
 COPY . .
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8888/health || exit 1
+
+# Command to run the application
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "4"]
