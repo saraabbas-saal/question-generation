@@ -28,9 +28,10 @@ class QuestionRequest(BaseModel):
 
 class Question(BaseModel):
     question_number: int
-    question: str  # Fixed: This should match what you're setting in parsing
+    question: str
     options: List[str]  # Always present, even for True or False (will be ["True", "False"])
     answer: str  # The answer field
+    model_answer: Optional[str] = None  # Added: For True or False with Justification
 
 class QuestionResponse(BaseModel):
     questions: List[Question]
@@ -38,7 +39,6 @@ class QuestionResponse(BaseModel):
     question_type: str
     language: str
     bloom_level: str
-   
 
 @app.get("/")
 async def root():
@@ -119,8 +119,7 @@ async def generate_questions(request: QuestionRequest):
             teaching_point=request.teaching_point,
             question_type=request.question_type,
             language=request.language,
-            bloom_level=request.bloom_level,
-           
+            bloom_level=request.bloom_level
         )
         
     except HTTPException:
@@ -148,7 +147,7 @@ def set_map_prompt(teaching_point: str, question_type: str, number_of_distractor
     # Justification text for True or False with Justification
     justification_text = ""
     if question_type == "True or False with Justification":
-        justification_text = "\nModel Answer: [Detailed justification explaining why the answer is correct]"
+        justification_text = "\nModel Answer: [Detailed justification explaining why the answer is either True or False]"
     
     # Question type specific formatting instructions
     format_instructions = get_format_instructions(question_type)
@@ -233,7 +232,7 @@ Question [Number]: [Question text]
 A) True
 B) False
 Answer: [A or B]
-Model Answer: [Justification why the answer is True or False]
+Model Answer: [Detailed justification explaining why the answer is True or False]
 """
 
 def parse_generated_questions(generated_text: str, question_type: str, teaching_point: str,
@@ -321,17 +320,26 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
                 answer = line.split(':', 1)[1].strip()
                 break
         
+        # Parse model answer field (for True or False with Justification)
+        model_answer = None
+        if question_type == "True or False with Justification":
+            for line in lines:
+                if line.startswith('Model Answer:'):
+                    model_answer = line.split(':', 1)[1].strip()
+                    break
+        
         # Default answer if not found
         if not answer:
             answer = "A"  # Default to first option
         
-        logger.info(f"Parsed question: text='{question_text}', options={options}, answer='{answer}'")
+        logger.info(f"Parsed question: text='{question_text}', options={options}, answer='{answer}', model_answer='{model_answer}'")
         
         return Question(
             question_number=question_number,
-            question=question_text,  # Fixed: Use 'question' not 'question_text'
+            question=question_text,
             options=options,
-            answer=answer
+            answer=answer,
+            model_answer=model_answer  # Added: Include model_answer
         )
     
     except Exception as e:
@@ -349,9 +357,10 @@ def create_fallback_question(question_number: int, question_type: str, teaching_
         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
         return Question(
             question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
+            question=f"Question {question_number} - parsing error occurred",
             options=options,
-            answer="A"
+            answer="A",
+            model_answer=None  # No model answer for Multiple Choice
         )
     
     elif question_type == "Multi-Select":
@@ -359,17 +368,23 @@ def create_fallback_question(question_number: int, question_type: str, teaching_
         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
         return Question(
             question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
+            question=f"Question {question_number} - parsing error occurred",
             options=options,
-            answer="A, B"  # Multi-select format
+            answer="A, B",  # Multi-select format
+            model_answer=None  # No model answer for Multi-Select
         )
     
     else:  # True or False or True or False with Justification
+        model_answer = None
+        if question_type == "True or False with Justification":
+            model_answer = "This question had parsing issues - unable to provide detailed justification."
+        
         return Question(
             question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
+            question=f"Question {question_number} - parsing error occurred",
             options=["True", "False"],
-            answer="A"
+            answer="A",
+            model_answer=model_answer  # Include model answer for justification type
         )
 
 # Health check for the service

@@ -2,9 +2,8 @@
 docker build -t afadi-question-gen .
 
 # 2. Run the container
-docker run -it \
+docker run -it --rm \
   --name afadi-question-gen  \
-  --restart unless-stopped \
   -p 8888:8888 \
   -v $(pwd)/logs:/app/logs \
   -e MODEL_HOST="http://192.168.71.70:8000" \
