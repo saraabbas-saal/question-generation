@@ -28,13 +28,9 @@ class QuestionRequest(BaseModel):
 
 class Question(BaseModel):
     question_number: int
-    question_text: str
-    question_type: str
+    question: str  # Fixed: This should match what you're setting in parsing
     options: List[str]  # Always present, even for True or False (will be ["True", "False"])
-    correct_answer: Optional[str] = None  # Single correct answer for MCQ and True or False
-    correct_answers: Optional[List[str]] = None  # Multiple correct answers for Multi-Select
-    teaching_points_covered: str  # Teaching points covered in this question
-    model_answer: Optional[str] = None  # For True or False with Justification
+    answer: str  # The answer field
 
 class QuestionResponse(BaseModel):
     questions: List[Question]
@@ -42,7 +38,7 @@ class QuestionResponse(BaseModel):
     question_type: str
     language: str
     bloom_level: str
-    total_questions: int = 3
+   
 
 @app.get("/")
 async def root():
@@ -124,7 +120,7 @@ async def generate_questions(request: QuestionRequest):
             question_type=request.question_type,
             language=request.language,
             bloom_level=request.bloom_level,
-            total_questions=len(parsed_questions)
+           
         )
         
     except HTTPException:
@@ -162,8 +158,8 @@ You are a smart instructor for the Air Force Defense and Institute (AFADI) gener
 
 You are an AI assistant designed to generate assessment questions for the military Air Force Defense and Institute (AFADI). 
 You will be given a teaching point, which is linked to a specific military concept or learning objective. 
-Your task is to: Understand the semantic meaning of the teaching point. Apply Bloom’s Taxonomy to determine appropriate cognitive levels (e.g., understand, apply, analyze). 
-Generate four types of questions: Five Multiple Choice Question (MCQ) Guidelines: AFADI refers to the Air Force Defense and Institute — always maintain relevance to this context. Avoid simply rephrasing the teaching point. Be creative and focus on implications, applications, comparisons, and conceptual understanding. Use military air defense scenarios or terminology where appropriate. Ensure all questions are clear, relevant, and test different levels of cognitive ability. Teaching Point: “Describe the tenets of airpower”
+Your task is to: Understand the semantic meaning of the teaching point. Apply Bloom's Taxonomy to determine appropriate cognitive levels (e.g., understand, apply, analyze). 
+Generate assessment questions following the specific format below.
 
 IMPORTANT: Generate exactly 3 questions, no more, no less.
 
@@ -185,8 +181,8 @@ Requirements:
 For each question, you must include:
 1. Question text
 2. All options (labeled A, B, C, etc.)
-3. Correct answer(s)
-4. Teaching points covered (specific aspects of the main teaching point this question addresses)
+3. Answer(s)
+4. [OPTIONAL] Model Answer in the case of True or False with justification
 {justification_text}
 
 Generate exactly 3 questions in {language} language following the specified format.
@@ -206,8 +202,7 @@ B) [Option B]
 C) [Option C]
 D) [Option D]
 [Add more options as needed based on number of distractors]
-Correct Answer: [Option A]
-Teaching Points Covered: [Specific aspects of the teaching point this question addresses]
+Answer: [A, B, C, or D]
 """
     
     elif question_type == "Multi-Select":
@@ -219,8 +214,7 @@ B) [Option B]
 C) [Option C]
 D) [Option D]
 [Add more options as needed]
-Correct Answers: [Option A, Option B]
-Teaching Points Covered: [Specific aspects of the teaching point this question addresses]
+Answer: [A, C] (multiple letters separated by commas)
 """
     
     elif question_type == "True or False":
@@ -229,8 +223,7 @@ Format each question as:
 Question [Number]: [Question text]
 A) True
 B) False
-Correct Answer: [A or B]
-Teaching Points Covered: [Specific aspects of the teaching point this question addresses]
+Answer: [A or B]
 """
     
     elif question_type == "True or False with Justification":
@@ -239,9 +232,8 @@ Format each question as:
 Question [Number]: [Question text]
 A) True
 B) False
-Correct Answer: [A or B]
-Teaching Points Covered: [Specific aspects of the teaching point this question addresses]
-Model Answer: [Detailed justification explaining why the answer is correct]
+Answer: [A or B]
+Model Answer: [Justification why the answer is True or False]
 """
 
 def parse_generated_questions(generated_text: str, question_type: str, teaching_point: str,
@@ -250,6 +242,7 @@ def parse_generated_questions(generated_text: str, question_type: str, teaching_
     """
     Parse the generated text into structured Question objects
     """
+    logger.info(f"Parsing generated text: {generated_text[:200]}...")
     questions = []
     
     try:
@@ -270,8 +263,11 @@ def parse_generated_questions(generated_text: str, question_type: str, teaching_
         if current_block:
             question_blocks.append('\n'.join(current_block))
         
+        logger.info(f"Found {len(question_blocks)} question blocks")
+        
         # Parse each question block
         for i, block in enumerate(question_blocks[:3], 1):  # Ensure only 3 questions
+            logger.info(f"Parsing question {i}: {block[:100]}...")
             question = parse_single_question(block, question_type, i, teaching_point)
             if question:
                 questions.append(question)
@@ -299,6 +295,7 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
     
     try:
         lines = [line.strip() for line in block.split('\n') if line.strip()]
+        logger.info(f"Parsing lines: {lines}")
         
         # Extract question text
         question_text = ""
@@ -317,39 +314,29 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         if question_type in ["True or False", "True or False with Justification"]:
             options = ["True", "False"]
         
-        # Parse answers and other fields
-        correct_answer = None
-        correct_answers = []
-        teaching_points_covered = ""
-        model_answer = None
-        
+        # Parse answer field
+        answer = None
         for line in lines:
-            if line.startswith('Correct Answer:'):
-                correct_answer = line.split(':', 1)[1].strip()
-            elif line.startswith('Correct Answers:'):
-                correct_answers = [ans.strip() for ans in line.split(':', 1)[1].split(',')]
-            elif line.startswith('Teaching Points Covered:'):
-                teaching_points_covered = line.split(':', 1)[1].strip()
-            elif line.startswith('Model Answer:'):
-                model_answer = line.split(':', 1)[1].strip()
+            if line.startswith('Answer:'):
+                answer = line.split(':', 1)[1].strip()
+                break
         
-        # Default teaching points covered if not found
-        if not teaching_points_covered:
-            teaching_points_covered = f"Application of: {teaching_point}"
+        # Default answer if not found
+        if not answer:
+            answer = "A"  # Default to first option
+        
+        logger.info(f"Parsed question: text='{question_text}', options={options}, answer='{answer}'")
         
         return Question(
             question_number=question_number,
-            question_text=question_text,
-            question_type=question_type,
+            question=question_text,  # Fixed: Use 'question' not 'question_text'
             options=options,
-            correct_answer=correct_answer if question_type != "Multi-Select" else None,
-            correct_answers=correct_answers if question_type == "Multi-Select" else None,
-            teaching_points_covered=teaching_points_covered,
-            model_answer=model_answer
+            answer=answer
         )
     
     except Exception as e:
         logger.error(f"Error parsing single question: {e}")
+        logger.error(f"Block content: {block}")
         return None
 
 def create_fallback_question(question_number: int, question_type: str, teaching_point: str,
@@ -362,36 +349,27 @@ def create_fallback_question(question_number: int, question_type: str, teaching_
         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
         return Question(
             question_number=question_number,
-            question_text=f"Question {question_number} - parsing error occurred",
-            question_type=question_type,
+            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
             options=options,
-            correct_answer="A",
-            teaching_points_covered=f"Related to: {teaching_point}"
+            answer="A"
         )
     
     elif question_type == "Multi-Select":
         total_options = (number_of_distractors or 2) + (number_of_correct_answers or 2)
         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
-        correct_count = number_of_correct_answers or 2
-        correct_answers = [chr(65 + i) for i in range(correct_count)]
         return Question(
             question_number=question_number,
-            question_text=f"Question {question_number} - parsing error occurred",
-            question_type=question_type,
+            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
             options=options,
-            correct_answers=correct_answers,
-            teaching_points_covered=f"Related to: {teaching_point}"
+            answer="A, B"  # Multi-select format
         )
     
     else:  # True or False or True or False with Justification
         return Question(
             question_number=question_number,
-            question_text=f"Question {question_number} - parsing error occurred",
-            question_type=question_type,
+            question=f"Question {question_number} - parsing error occurred",  # Fixed: Use 'question'
             options=["True", "False"],
-            correct_answer="A",
-            teaching_points_covered=f"Related to: {teaching_point}",
-            model_answer="This question had parsing issues." if question_type == "True or False with Justification" else None
+            answer="A"
         )
 
 # Health check for the service

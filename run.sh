@@ -2,7 +2,7 @@
 docker build -t afadi-question-gen .
 
 # 2. Run the container
-docker run -it -d \
+docker run -it \
   --name afadi-question-gen  \
   --restart unless-stopped \
   -p 8888:8888 \
@@ -12,6 +12,3 @@ docker run -it -d \
   -e DEFAULT_MODEL="sayed0am/Adept-14B-AWQ" \
   afadi-question-gen
 
-
-# 4. View logs
-docker logs -f afadi-question-gen
