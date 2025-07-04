@@ -19,10 +19,11 @@ class Query(BaseModel):
     prompt: str = Field(..., description="The prompt for text generation")
 
 class QuestionRequest(BaseModel):
-    teaching_point: str = Field(..., description="The teaching point to generate questions from")
+    teaching_point_ar: str = Field(..., description="The teaching point to generate questions from (in arabic lang)")
+    teaching_point_en: str = Field(..., description="The teaching point to generate questions from (in english lang)")
     question_type: str = Field(..., description="Type of questions: 'Multiple Choice', 'Multi-Select', 'True or False', or 'True or False with Justification'")
-    number_of_distractors: Optional[int] = Field(None, ge=2, le=6, description="Number of distractors for Multiple Choice and Multi-Select (total options = distractors + correct answers)")
-    number_of_correct_answers: Optional[int] = Field(None, ge=1, le=4, description="Number of correct answers for Multi-Select questions")
+    number_of_distractors: Optional[int] = Field(None, ge=2, le=6, description="Number of distractors for Multiple Choice and Multi-Select questions (required for these types, ignored for True/False)")
+    number_of_correct_answers: Optional[int] = Field(None, ge=1, le=4, description="Number of correct answers for Multi-Select questions (required for Multi-Select, ignored for others)")
     language: str = Field(default="english", description="Language for question generation")
     bloom_level: str = Field(default="Understand", description="Bloom's taxonomy level")
 
@@ -85,11 +86,19 @@ async def generate_questions(request: QuestionRequest):
                 )
         
         # Validate Multiple Choice parameters
-        if request.question_type == "Multiple Choice" and request.number_of_distractors is None:
-            raise HTTPException(
-                status_code=400, 
-                detail="number_of_distractors is required for Multiple Choice questions"
-            )
+        if request.question_type == "Multiple Choice":
+            if request.number_of_distractors is None:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="number_of_distractors is required for Multiple Choice questions"
+                )
+        
+        # Validate True/False parameters - number_of_distractors should be ignored
+        if request.question_type in ["True or False", "True or False with Justification"]:
+            if request.number_of_distractors is not None:
+                logger.warning(f"number_of_distractors ({request.number_of_distractors}) will be ignored for {request.question_type} questions")
+            if request.number_of_correct_answers is not None:
+                logger.warning(f"number_of_correct_answers ({request.number_of_correct_answers}) will be ignored for {request.question_type} questions")
         
         # Create the prompt using the helper function
         prompt = set_map_prompt(
@@ -147,7 +156,7 @@ def set_map_prompt(teaching_point: str, question_type: str, number_of_distractor
     # Justification text for True or False with Justification
     justification_text = ""
     if question_type == "True or False with Justification":
-        justification_text = "\nModel Answer: [Detailed justification explaining why the answer is either True or False]"
+        justification_text = "\nModel Answer: [Detailed justification explaining why the answer is correct]"
     
     # Question type specific formatting instructions
     format_instructions = get_format_instructions(question_type)
