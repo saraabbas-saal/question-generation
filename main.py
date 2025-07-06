@@ -1,3 +1,4 @@
+print("=== FILE RELOADED ===")
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -21,18 +22,18 @@ class Query(BaseModel):
 class QuestionRequest(BaseModel):
     teaching_point_ar: str = Field(..., description="The teaching point to generate questions from (in arabic lang)")
     teaching_point_en: str = Field(..., description="The teaching point to generate questions from (in english lang)")
-    question_type: str = Field(..., description="Type of questions: 'Multiple Choice', 'Multi-Select', 'True or False', or 'True or False with Justification'")
-    number_of_distractors: Optional[int] = Field(None, ge=2, le=6, description="Number of distractors for Multiple Choice and Multi-Select questions (required for these types, ignored for True/False)")
-    number_of_correct_answers: Optional[int] = Field(None, ge=1, le=4, description="Number of correct answers for Multi-Select questions (required for Multi-Select, ignored for others)")
-    language: str = Field(default="english", description="Language for question generation")
+    question_type: str = Field(..., description="Type of questions: 'MULTICHOICE', 'MULTI_SELECT', 'TRUE_FALSE', or 'TRUE_FALSE_JUSTIFICATION'")
+    number_of_distractors: Optional[int] = Field(None, ge=2, le=6, description="Number of distractors for MULTICHOICE and MULTI_SELECT questions (required for these types, ignored for True/False)")
+    number_of_correct_answers: Optional[int] = Field(None, ge=1, le=4, description="Number of correct answers for MULTI_SELECT questions (required for MULTI_SELECT, ignored for others)")
+    language: str = Field(default="en", description="Language for question generation")
     bloom_level: str = Field(default="Understand", description="Bloom's taxonomy level")
 
 class Question(BaseModel):
     question_number: int
     question: str
-    options: List[str]  # Always present, even for True or False (will be ["True", "False"])
-    answer: str  # The answer field
-    model_answer: Optional[str] = None  # Added: For True or False with Justification
+    options: List[dict]  # Always present, even for TRUE_FALSE (will be ["True", "False"])
+    answer: List[str]  # The answer field
+    model_answer: Optional[str] = None  # Added: For TRUE_FALSE_JUSTIFICATION
 
 class QuestionResponse(BaseModel):
     questions: List[Question]
@@ -65,48 +66,56 @@ async def generate_questions(request: QuestionRequest):
     """
     try:
         # Validate question type
-        valid_types = ["Multiple Choice", "Multi-Select", "True or False", "True or False with Justification"]
+        valid_types = ["MULTICHOICE", "MULTI_SELECT", "TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]
         if request.question_type not in valid_types:
             raise HTTPException(
                 status_code=400, 
                 detail=f"Invalid question_type. Must be one of: {', '.join(valid_types)}"
             )
-        
-        # Validate Multi-Select parameters
-        if request.question_type == "Multi-Select":
+  
+        # Validate MULTI_SELECT parameters
+        if request.question_type == "MULTI_SELECT":
             if request.number_of_correct_answers is None:
                 raise HTTPException(
                     status_code=400, 
-                    detail="number_of_correct_answers is required for Multi-Select questions"
+                    detail="number_of_correct_answers is required for MULTI_SELECT questions"
                 )
             if request.number_of_distractors is None:
                 raise HTTPException(
                     status_code=400, 
-                    detail="number_of_distractors is required for Multi-Select questions"
+                    detail="number_of_distractors is required for MULTI_SELECT questions"
                 )
         
-        # Validate Multiple Choice parameters
-        if request.question_type == "Multiple Choice":
+        # Validate MULTICHOICE parameters
+        if request.question_type == "MULTICHOICE":
             if request.number_of_distractors is None:
                 raise HTTPException(
                     status_code=400, 
                     detail="number_of_distractors is required for Multiple Choice questions"
                 )
         
-        # Validate True/False parameters - number_of_distractors should be ignored
-        if request.question_type in ["True or False", "True or False with Justification"]:
-            if request.number_of_distractors is not None:
-                logger.warning(f"number_of_distractors ({request.number_of_distractors}) will be ignored for {request.question_type} questions")
-            if request.number_of_correct_answers is not None:
-                logger.warning(f"number_of_correct_answers ({request.number_of_correct_answers}) will be ignored for {request.question_type} questions")
+        # # Validate True/False parameters - number_of_distractors should be ignored
+        # if request.question_type in ["TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]:
+        #     if request.number_of_distractors is not None:
+        #         logger.warning(f"number_of_distractors ({request.number_of_distractors}) will be ignored for {request.question_type} questions")
+        #     if request.number_of_correct_answers is not None:
+        #         logger.warning(f"number_of_correct_answers ({request.number_of_correct_answers}) will be ignored for {request.question_type} questions")
         
         # Create the prompt using the helper function
+        
+        if request.language == 'ar':
+            teaching_point=request.teaching_point_ar
+            lang= 'arabic'
+        elif request.language== 'en':
+            teaching_point=request.teaching_point_en
+            lang= 'english'
+    
         prompt = set_map_prompt(
-            teaching_point=request.teaching_point,
+            teaching_point=teaching_point,
             question_type=request.question_type,
             number_of_distractors=request.number_of_distractors,
             number_of_correct_answers=request.number_of_correct_answers,
-            language=request.language,
+            language=lang,
             bloom_level=request.bloom_level
         )
         
@@ -117,7 +126,7 @@ async def generate_questions(request: QuestionRequest):
         parsed_questions = parse_generated_questions(
             generated_response, 
             request.question_type,
-            request.teaching_point,
+            teaching_point,
             request.number_of_distractors,
             request.number_of_correct_answers
         )
@@ -125,9 +134,9 @@ async def generate_questions(request: QuestionRequest):
         # Return structured response
         return QuestionResponse(
             questions=parsed_questions,
-            teaching_point=request.teaching_point,
+            teaching_point=teaching_point,
             question_type=request.question_type,
-            language=request.language,
+            language=lang,#request.language,
             bloom_level=request.bloom_level
         )
         
@@ -143,19 +152,19 @@ def set_map_prompt(teaching_point: str, question_type: str, number_of_distractor
     Creates a prompt template for question generation based on specific requirements
     """
     
-    # Calculate total options for Multiple Choice and Multi-Select
-    if question_type == "Multiple Choice":
+    # Calculate total options for MULTICHOICE and MULTI_SELECT
+    if question_type == "MULTICHOICE":
         total_options = number_of_distractors + 1  # distractors + 1 correct answer
         options_text = f"Generate exactly {total_options} options (A, B, C, D, etc.) with exactly 1 correct answer."
-    elif question_type == "Multi-Select":
+    elif question_type == "MULTI_SELECT":
         total_options = number_of_distractors + number_of_correct_answers
         options_text = f"Generate exactly {total_options} options (A, B, C, D, etc.) with exactly {number_of_correct_answers} correct answers."
-    elif question_type in ["True or False", "True or False with Justification"]:
+    elif question_type in ["TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]:
         options_text = "Generate exactly 2 options: A) True, B) False"
     
-    # Justification text for True or False with Justification
+    # Justification text for TRUE_FALSE_JUSTIFICATION
     justification_text = ""
-    if question_type == "True or False with Justification":
+    if question_type == "TRUE_FALSE_JUSTIFICATION":
         justification_text = "\nModel Answer: [Detailed justification explaining why the answer is correct]"
     
     # Question type specific formatting instructions
@@ -190,7 +199,7 @@ For each question, you must include:
 1. Question text
 2. All options (labeled A, B, C, etc.)
 3. Answer(s)
-4. [OPTIONAL] Model Answer in the case of True or False with justification
+4. [OPTIONAL] Model Answer in the case of TRUE_FALSE_JUSTIFICATION
 {justification_text}
 
 Generate exactly 3 questions in {language} language following the specified format.
@@ -201,7 +210,7 @@ Generate exactly 3 questions in {language} language following the specified form
 def get_format_instructions(question_type: str) -> str:
     """Get specific formatting instructions based on question type"""
     
-    if question_type == "Multiple Choice":
+    if question_type == "MULTICHOICE":
         return """
 Format each question as:
 Question [Number]: [Question text]
@@ -213,7 +222,7 @@ D) [Option D]
 Answer: [A, B, C, or D]
 """
     
-    elif question_type == "Multi-Select":
+    elif question_type == "MULTI_SELECT":
         return """
 Format each question as:
 Question [Number]: [Question text]
@@ -225,7 +234,7 @@ D) [Option D]
 Answer: [A, C] (multiple letters separated by commas)
 """
     
-    elif question_type == "True or False":
+    elif question_type == "TRUE_FALSE":
         return """
 Format each question as:
 Question [Number]: [Question text]
@@ -234,14 +243,14 @@ B) False
 Answer: [A or B]
 """
     
-    elif question_type == "True or False with Justification":
+    elif question_type == "TRUE_FALSE_JUSTIFICATION":
         return """
 Format each question as:
 Question [Number]: [Question text]
 A) True
 B) False
 Answer: [A or B]
-Model Answer: [Detailed justification explaining why the answer is True or False]
+Model Answer: [Detailed justification explaining why the answer is TRUE_FALSE]
 """
 
 def parse_generated_questions(generated_text: str, question_type: str, teaching_point: str,
@@ -315,23 +324,34 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         # Parse options
         options = []
         for line in lines:
-            if line.startswith(('A)', 'B)', 'C)', 'D)', 'E)', 'F)')):
-                options.append(line[2:].strip())
+            if line.startswith(('A', 'B', 'C', 'D', 'E', 'F')):
+                # options.append(line[2:].strip())
+                options.append(
+                { "key": line[0:1],
+                 "value": line[2:].strip()
+                }
+                 )
         
-        # Ensure True or False questions always have exactly 2 options
-        if question_type in ["True or False", "True or False with Justification"]:
-            options = ["True", "False"]
+        # Ensure TRUE_FALSE questions always have exactly 2 options
+        if question_type in ["TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]:
+            options = [
+                { "key": "A",
+                 "value": "True"
+                 }, 
+                 { "key": "B", 
+                 "value": "False" }
+                ]
         
         # Parse answer field
         answer = None
         for line in lines:
             if line.startswith('Answer:'):
-                answer = line.split(':', 1)[1].strip()
+                answer = [line.split(':', 1)[1].strip()]
                 break
         
-        # Parse model answer field (for True or False with Justification)
+        # Parse model answer field (for TRUE_FALSE_JUSTIFICATION)
         model_answer = None
-        if question_type == "True or False with Justification":
+        if question_type == "TRUE_FALSE_JUSTIFICATION":
             for line in lines:
                 if line.startswith('Model Answer:'):
                     model_answer = line.split(':', 1)[1].strip()
@@ -356,45 +376,51 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         logger.error(f"Block content: {block}")
         return None
 
-def create_fallback_question(question_number: int, question_type: str, teaching_point: str,
-                           number_of_distractors: Optional[int], 
-                           number_of_correct_answers: Optional[int]) -> Question:
-    """Create a fallback question when parsing fails"""
+# def create_fallback_question(question_number: int, question_type: str, teaching_point: str,
+#                            number_of_distractors: Optional[int], 
+#                            number_of_correct_answers: Optional[int]) -> Question:
+#     """Create a fallback question when parsing fails"""
     
-    if question_type == "Multiple Choice":
-        total_options = (number_of_distractors or 3) + 1
-        options = [f"Option {chr(65 + i)}" for i in range(total_options)]
-        return Question(
-            question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",
-            options=options,
-            answer="A",
-            model_answer=None  # No model answer for Multiple Choice
-        )
+#     if question_type == "MULTICHOICE":
+#         total_options = (number_of_distractors or 3) + 1
+#         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
+#         return Question(
+#             question_number=question_number,
+#             question=f"Question {question_number} - parsing error occurred",
+#             options=options,
+#             answer="A",
+#             model_answer=None  # No model answer for MULTICHOICE
+#         )
     
-    elif question_type == "Multi-Select":
-        total_options = (number_of_distractors or 2) + (number_of_correct_answers or 2)
-        options = [f"Option {chr(65 + i)}" for i in range(total_options)]
-        return Question(
-            question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",
-            options=options,
-            answer="A, B",  # Multi-select format
-            model_answer=None  # No model answer for Multi-Select
-        )
+#     elif question_type == "MULTI_SELECT":
+#         total_options = (number_of_distractors or 2) + (number_of_correct_answers or 2)
+#         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
+#         return Question(
+#             question_number=question_number,
+#             question=f"Question {question_number} - parsing error occurred",
+#             options=options,
+#             answer="A, B",  # MULTI_SELECT format
+#             model_answer=None  # No model answer for MULTI_SELECT
+#         )
     
-    else:  # True or False or True or False with Justification
-        model_answer = None
-        if question_type == "True or False with Justification":
-            model_answer = "This question had parsing issues - unable to provide detailed justification."
+#     else:  # TRUE_FALSE or TRUE_FALSE_JUSTIFICATION
+#         model_answer = None
+#         if question_type == "TRUE_FALSE_JUSTIFICATION":
+#             model_answer = "This question had parsing issues - unable to provide detailed justification."
         
-        return Question(
-            question_number=question_number,
-            question=f"Question {question_number} - parsing error occurred",
-            options=["True", "False"],
-            answer="A",
-            model_answer=model_answer  # Include model answer for justification type
-        )
+#         return Question(
+#             question_number=question_number,
+#             question=f"Question {question_number} - parsing error occurred",
+#             options=[
+#                 { "key": "A)",
+#                  "value": "True"
+#                  }, 
+#                  { "key": "B)", 
+#                  "value": "False" }
+#                 ],
+#             answer="A",
+#             model_answer=model_answer  # Include model answer for justification type
+#         )
 
 # Health check for the service
 @app.get("/health")

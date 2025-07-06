@@ -29,7 +29,7 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         Exception: If LLM service call fails
     """
     
-    logger.info("🚀 Starting LLM request...")
+    logger.info("Starting LLM request...")
     start_time = time.time()
     
     if model is None:
@@ -57,18 +57,9 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         "Authorization": f"Bearer {MODEL_OPEN_AI_KEY}"
     }
     
-    # Log request details
-    logger.info(f"📡 LLM Request Details:")
-    logger.info(f"   🔗 Host: {MODEL_HOST}")
-    logger.info(f"   🤖 Model: {model}")
-    logger.info(f"   📝 Prompt length: {len(prompt)} characters")
-    logger.info(f"   🎯 Max tokens: {max_tokens}")
-    logger.info(f"   🌡️  Temperature: {temperature}")
-    logger.debug(f"   📄 Prompt preview: {prompt[:200]}...")
-    logger.debug(f"   🔑 Authorization: Bearer {'*' * len(MODEL_OPEN_AI_KEY)}")
-    
+   
     try:
-        logger.info(f"📤 Sending request to: {MODEL_HOST}/v1/chat/completions")
+        logger.info(f"Sending request to: {MODEL_HOST}/v1/chat/completions")
         
         # Make the API call
         response = requests.post(
