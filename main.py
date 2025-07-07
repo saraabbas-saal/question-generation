@@ -324,7 +324,7 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         # Parse options
         options = []
         for line in lines:
-            if line.startswith(('A', 'B', 'C', 'D', 'E', 'F')):
+            if line.startswith(('A) ', 'B) ', 'C) ', 'D) ', 'E) ', 'F) ')):
                 # options.append(line[2:].strip())
                 options.append(
                 { "key": line[0:1],
@@ -346,7 +346,9 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         answer = None
         for line in lines:
             if line.startswith('Answer:'):
-                answer = [line.split(':', 1)[1].strip()]
+                answer = line.split(':', -1)[1].split(',',-1)
+                # logger.info(f"answerssssssssssss: {answer}")
+                answer= [i.strip() for i in answer]
                 break
         
         # Parse model answer field (for TRUE_FALSE_JUSTIFICATION)
