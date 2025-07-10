@@ -11,7 +11,7 @@ API_URL = 'http://192.168.71.70:8888/generate-questions'
 
 def read_test_set():
     """Read the teaching points CSV file"""
-    df = pd.read_csv('./data/teaching_points_examples.csv')
+    df = pd.read_csv('./data/teaching_points_examples2.csv')
     return df
 
 
