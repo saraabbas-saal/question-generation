@@ -2,7 +2,7 @@ import requests
 import logging
 import time
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from config import MODEL_HOST, MODEL_OPEN_AI_KEY, DEFAULT_MODEL
 
 # Configure logging
@@ -12,7 +12,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int = 1000, temperature: float = 0.7) -> str:
+def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int = 1000, 
+                     temperature: float = 0.5, return_full_response: bool = False) -> Union[str, Dict[str, Any]]:
     """
     Get response from LLM service with detailed logging
     
@@ -21,9 +22,10 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         model (str, optional): Model name to use, defaults to DEFAULT_MODEL
         max_tokens (int): Maximum tokens in response
         temperature (float): Temperature for response generation
+        return_full_response (bool): If True, returns full OpenAI format response; if False, returns just the content
         
     Returns:
-        str: Generated response from LLM
+        Union[str, Dict[str, Any]]: Generated response from LLM (content string or full response dict)
         
     Raises:
         Exception: If LLM service call fails
@@ -38,7 +40,7 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
     else:
         logger.debug(f"Using specified model: {model}")
     
-    # Prepare the request payload
+    # Prepare the request payload in OpenAI format
     payload = {
         "model": model,
         "messages": [
@@ -49,7 +51,10 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         ],
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "stream": False
+        "stream": False,
+        "top_p": 0.8,
+        "top_k": 20,  
+        "min_p": 0
     }
     
     headers = {
@@ -57,7 +62,8 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         "Authorization": f"Bearer {MODEL_OPEN_AI_KEY}"
     }
     
-   
+    logger.debug(f"Request payload: {json.dumps(payload, indent=2)}")
+    
     try:
         logger.info(f"Sending request to: {MODEL_HOST}/v1/chat/completions")
         
@@ -91,7 +97,7 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
             logger.error(f"Raw response text: {response.text}")
             raise Exception("Invalid JSON response from LLM service")
         
-        # Extract the generated text
+        # Extract the generated text or return full response
         if "choices" in response_data and len(response_data["choices"]) > 0:
             generated_text = response_data["choices"][0]["message"]["content"]
             logger.info(f"✅ Successfully received LLM response")
@@ -101,7 +107,11 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
             total_time = time.time() - start_time
             logger.info(f"🎉 LLM request completed successfully in {total_time:.2f} seconds")
             
-            return generated_text.strip()
+            if return_full_response:
+                logger.info("📋 Returning full OpenAI format response")
+                return response_data
+            else:
+                return generated_text.strip()
         else:
             logger.error("❌ Invalid response format from LLM service")
             logger.error(f"Response data structure: {response_data}")
@@ -137,54 +147,6 @@ def get_llm_response(prompt: str, model: Optional[str] = None, max_tokens: int =
         logger.error(f"💥 Unexpected error after {request_time:.2f} seconds: {e}")
         logger.error(f"   🔗 Target: {MODEL_HOST}")
         logger.error(f"   🤖 Model: {model}")
-        raise Exception(f"LLM service call failed: {e}")
-
-def get_llm_response_openai_format(prompt: str, model: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Get response from LLM service in OpenAI format (for compatibility)
-    
-    Args:
-        prompt (str): The input prompt for the LLM
-        model (str, optional): Model name to use
-        
-    Returns:
-        Dict[str, Any]: Full response in OpenAI format
-    """
-    
-    logger.info("📋 Getting LLM response in OpenAI format...")
-    
-    if model is None:
-        model = DEFAULT_MODEL
-    
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 1000,
-        "temperature": 0.7
-    }
-    
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {MODEL_OPEN_AI_KEY}"
-    }
-    
-    logger.debug(f"OpenAI format request payload: {json.dumps(payload, indent=2)}")
-    
-    try:
-        response = requests.post(
-            f"{MODEL_HOST}/v1/chat/completions",
-            json=payload,
-            headers=headers,
-            timeout=120
-        )
-        
-        response.raise_for_status()
-        result = response.json()
-        logger.info("✅ OpenAI format response received successfully")
-        return result
-        
-    except Exception as e:
-        logger.error(f"❌ Error in OpenAI format LLM call: {e}")
         raise Exception(f"LLM service call failed: {e}")
 
 def validate_llm_connection() -> bool:

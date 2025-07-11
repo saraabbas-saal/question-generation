@@ -89,6 +89,7 @@ async def generate_questions(request: QuestionRequest):
     
         prompt = set_map_prompt(
             teaching_point=teaching_point,
+            context= request.context,
             question_type=request.question_type,
             number_of_distractors=request.number_of_distractors,
             number_of_correct_answers=request.number_of_correct_answers,

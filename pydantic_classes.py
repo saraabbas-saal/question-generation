@@ -8,6 +8,7 @@ class Query(BaseModel):
 class QuestionRequest(BaseModel):
     teaching_point_ar: str = Field(..., description="The teaching point to generate questions from (in arabic lang)")
     teaching_point_en: str = Field(..., description="The teaching point to generate questions from (in english lang)")
+    context: Optional[str] = Field(..., description= "More information on the teaching point")
     question_type: str = Field(..., description="Type of questions: 'MULTICHOICE', 'MULTI_SELECT', 'TRUE_FALSE', or 'TRUE_FALSE_JUSTIFICATION'")
     number_of_distractors: Optional[int] = Field(None, ge=2, le=6, description="Number of distractors for MULTICHOICE and MULTI_SELECT questions (required for these types, ignored for True/False)")
     number_of_correct_answers: Optional[int] = Field(None, ge=1, le=4, description="Number of correct answers for MULTI_SELECT questions (required for MULTI_SELECT, ignored for others)")

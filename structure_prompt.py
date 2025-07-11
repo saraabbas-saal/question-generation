@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 import uvicorn
 import logging
 from pydantic_classes import Question, QuestionRequest, Query, QuestionResponse
@@ -181,7 +181,7 @@ def parse_single_question(block: str, question_type: str, question_number: int, 
         return None
 
 
-def set_map_prompt(teaching_point: str, question_type: str, number_of_distractors: Optional[int], 
+def set_map_prompt(teaching_point: str, context: Optional[str], question_type: str, number_of_distractors: Optional[int], 
                   number_of_correct_answers: Optional[int], language: str, bloom_level: str) -> str:
     """
     Creates a prompt template for question generation based on specific requirements
@@ -210,7 +210,7 @@ You are a smart instructor for the Air Force Defense and Institute (AFADI) gener
 
 You are an AI assistant designed to generate assessment questions for the military Air Force Defense and Institute (AFADI). 
 You will be given a teaching point, which is linked to a specific military concept or learning objective. 
-Your task is to: Understand the semantic meaning of the teaching point. Apply Bloom's Taxonomy to determine appropriate cognitive levels (e.g., understand, apply, analyze). 
+Your task is to: Understand the semantic meaning of the teaching point, if the context is provided use it in the question generation. Apply Bloom's Taxonomy to determine appropriate cognitive levels (e.g., understand, apply, analyze). 
 Generate assessment questions following the specific format below.
 AFADI refers to the Air Force Defense and Institute — always maintain relevance to this context.
 Avoid simply rephrasing the teaching point.
@@ -222,17 +222,25 @@ IMPORTANT: Generate exactly 3 questions, no more, no less.
 
 Parameters:
 - Teaching Point: {teaching_point}
+- Context: {context}
 - Question Type: {question_type}
 - Language: {language}
 - Bloom's Taxonomy Level: {bloom_level}
 
 Requirements:
 - {options_text}
+- The target audience are questions are for students in the Air Force Defense and Institute (AFADI).  
 - Focus on {bloom_level} cognitive level of Bloom's Taxonomy
 - Each question must be directly related to the teaching point
 - Use military air defense context and AFADI scenarios
 - Make each question unique and test different aspects
 - If the teaching point includes the term "AFADI", keep the question short and simple, and don't come up with scenarios and only maintain relevance to the teaching point.
+- Extract the theory behind each teaching point.  
+- If a question involves an abbreviation, only return the correct spelling of the abbreviation mentioned in the teaching point. 
+- Remove the word "only" from MCQ questions.  
+- If the question is about an abbreviation, the options are designed to be less obvious, avoiding simple alphabetical cues.
+- If a question involves an abbreviation, do a mapping of this abbreviation to the closest commonly known military terminology.
+- Be factual, don't come up with new terminology
 
 {format_instructions}
 
