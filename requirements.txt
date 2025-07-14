@@ -3,6 +3,11 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 requests==2.31.0
 python-multipart==0.0.6
-pandas
-openai
 python-dotenv
+baml-py==0.90.2
+baml-cli
+
+# Optional dependencies for testing and development
+pandas
+pytest
+httpx

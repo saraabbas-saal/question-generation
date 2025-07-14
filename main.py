@@ -1,45 +1,83 @@
-print("=== FILE RELOADED ===")
-from fastapi import FastAPI, Request, HTTPException
-from pydantic import BaseModel, Field
+print("=== BAML-ONLY AFADI QUESTION GENERATION API ===")
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import uvicorn
 import logging
-from llm_utils import get_llm_response
-from structure_prompt import get_format_instructions, parse_generated_questions, parse_single_question, set_map_prompt
-from pydantic_classes import Question, QuestionRequest, Query, QuestionResponse
+from baml_service import baml_service
+from baml_client.types import QuestionGenerationResult, GeneratedQuestion, QuestionOption
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="AFADI Question Generation API",
-    description="API for generating military assessment questions",
-    version="1.0.0"
+    title="AFADI Question Generation API (BAML)",
+    description="API for generating military assessment questions using BAML only",
+    version="3.0.0"
 )
 
+# Pydantic models for API requests (keeping these minimal for FastAPI)
+class QuestionRequest(BaseModel):
+    teaching_point_en: str
+    teaching_point_ar: str = ""
+    context: Optional[str] = None
+    question_type: str = "MULTICHOICE"
+    number_of_distractors: Optional[int] = None
+    number_of_correct_answers: Optional[int] = None
+    language: str = "en"
+    bloom_level: str = "UNDERSTAND"
+
+class LegacyQuery(BaseModel):
+    prompt: str
+
+# Helper function to convert BAML result to legacy format
+def convert_baml_to_legacy_format(baml_result: QuestionGenerationResult) -> Dict[str, Any]:
+    """
+    Convert BAML QuestionGenerationResult to legacy API format for backward compatibility
+    """
+    legacy_questions = []
+    
+    for question in baml_result.questions:
+        legacy_question = {
+            "question_number": question.question_number,
+            "question": question.question,
+            "options": [{"key": opt.key, "value": opt.value} for opt in question.options],
+            "answer": question.answer,
+            "confidence_score": 0.95  # Default confidence score
+        }
+        
+        # Add model_answer if present (for TRUE_FALSE_JUSTIFICATION)
+        if question.model_answer:
+            legacy_question["model_answer"] = question.model_answer
+            
+        legacy_questions.append(legacy_question)
+    
+    return {
+        "questions": legacy_questions,
+        "teaching_point": baml_result.teaching_point,
+        "question_type": baml_result.question_type,
+        "language": baml_result.language,
+        "bloom_level": baml_result.bloom_level,
+        "success": True,
+        "total_questions": len(legacy_questions)
+    }
 
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"message": "AFADI Question Generation API is running"}
+    return {
+        "message": "AFADI Question Generation API with BAML-only is running",
+        "version": "3.0.0",
+        "baml_enabled": True,
+        "legacy_support": True
+    }
 
-@app.post("/generate", response_model=dict)
-async def generate_text(query: Query):
-    """
-    Generate text based on a custom prompt
-    """
-    try:
-        response = get_llm_response(query.prompt)
-        return {"response": response}
-    except Exception as e:
-        logger.error(f"Error in generate_text: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Text generation failed: {str(e)}")
-
-@app.post("/generate-questions", response_model=QuestionResponse)
+@app.post("/generate-questions", response_model=Dict[str, Any])
 async def generate_questions(request: QuestionRequest):
     """
-    Generate exactly 3 assessment questions based on teaching points for AFADI
+    Generate exactly 3 assessment questions using BAML
+    Returns legacy format for backward compatibility
     """
     try:
         # Validate question type
@@ -68,121 +106,165 @@ async def generate_questions(request: QuestionRequest):
             if request.number_of_distractors is None:
                 raise HTTPException(
                     status_code=400, 
-                    detail="number_of_distractors is required for Multiple Choice questions"
+                    detail="number_of_distractors is required for MULTICHOICE questions"
                 )
         
-        # # Validate True/False parameters - number_of_distractors should be ignored
-        # if request.question_type in ["TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]:
-        #     if request.number_of_distractors is not None:
-        #         logger.warning(f"number_of_distractors ({request.number_of_distractors}) will be ignored for {request.question_type} questions")
-        #     if request.number_of_correct_answers is not None:
-        #         logger.warning(f"number_of_correct_answers ({request.number_of_correct_answers}) will be ignored for {request.question_type} questions")
+        # Generate questions using BAML
+        logger.info(f"🎯 Generating {request.question_type} questions via BAML")
         
-        # Create the prompt using the helper function
-        
-        if request.language == 'ar':
-            teaching_point=request.teaching_point_ar
-            lang= 'arabic'
-        elif request.language== 'en':
-            teaching_point=request.teaching_point_en
-            lang= 'english'
-    
-        prompt = set_map_prompt(
-            teaching_point=teaching_point,
-            context= request.context,
+        baml_result = await baml_service.generate_questions_async(
+            teaching_point_en=request.teaching_point_en,
+            teaching_point_ar=request.teaching_point_ar,
+            context=request.context,
             question_type=request.question_type,
             number_of_distractors=request.number_of_distractors,
             number_of_correct_answers=request.number_of_correct_answers,
-            language=lang,
+            language=request.language,
             bloom_level=request.bloom_level
         )
         
-        # Generate questions using LLM
-        generated_response = get_llm_response(prompt, max_tokens=2500)
+        # Convert to legacy format for backward compatibility
+        legacy_response = convert_baml_to_legacy_format(baml_result)
         
-        # Parse the generated response into structured questions
-        parsed_questions = parse_generated_questions(
-            generated_response, 
-            request.question_type,
-            teaching_point,
-            request.number_of_distractors,
-            request.number_of_correct_answers
-        )
-        
-        # Return structured response
-        return QuestionResponse(
-            questions=parsed_questions,
-            teaching_point=teaching_point,
-            question_type=request.question_type,
-            language=lang,#request.language,
-            bloom_level=request.bloom_level
-        )
+        logger.info(f"✅ Successfully generated {len(baml_result.questions)} questions via BAML")
+        return legacy_response
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in generate_questions: {str(e)}")
+        logger.error(f"❌ Error in generate_questions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Question generation failed: {str(e)}")
 
-
-# def create_fallback_question(question_number: int, question_type: str, teaching_point: str,
-#                            number_of_distractors: Optional[int], 
-#                            number_of_correct_answers: Optional[int]) -> Question:
-#     """Create a fallback question when parsing fails"""
-    
-#     if question_type == "MULTICHOICE":
-#         total_options = (number_of_distractors or 3) + 1
-#         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
-#         return Question(
-#             question_number=question_number,
-#             question=f"Question {question_number} - parsing error occurred",
-#             options=options,
-#             answer="A",
-#             model_answer=None  # No model answer for MULTICHOICE
-#         )
-    
-#     elif question_type == "MULTI_SELECT":
-#         total_options = (number_of_distractors or 2) + (number_of_correct_answers or 2)
-#         options = [f"Option {chr(65 + i)}" for i in range(total_options)]
-#         return Question(
-#             question_number=question_number,
-#             question=f"Question {question_number} - parsing error occurred",
-#             options=options,
-#             answer="A, B",  # MULTI_SELECT format
-#             model_answer=None  # No model answer for MULTI_SELECT
-#         )
-    
-#     else:  # TRUE_FALSE or TRUE_FALSE_JUSTIFICATION
-#         model_answer = None
-#         if question_type == "TRUE_FALSE_JUSTIFICATION":
-#             model_answer = "This question had parsing issues - unable to provide detailed justification."
+@app.post("/generate-questions-baml", response_model=Dict[str, Any])
+async def generate_questions_baml_native(request: QuestionRequest):
+    """
+    Generate questions using BAML - returns native BAML format
+    """
+    try:
+        # Same validation as above
+        valid_types = ["MULTICHOICE", "MULTI_SELECT", "TRUE_FALSE", "TRUE_FALSE_JUSTIFICATION"]
+        if request.question_type not in valid_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid question_type. Must be one of: {', '.join(valid_types)}"
+            )
         
-#         return Question(
-#             question_number=question_number,
-#             question=f"Question {question_number} - parsing error occurred",
-#             options=[
-#                 { "key": "A)",
-#                  "value": "True"
-#                  }, 
-#                  { "key": "B)", 
-#                  "value": "False" }
-#                 ],
-#             answer="A",
-#             model_answer=model_answer  # Include model answer for justification type
-#         )
+        # Generate questions using BAML
+        logger.info(f"🎯 Generating {request.question_type} questions via BAML (native format)")
+        
+        baml_result = await baml_service.generate_questions_async(
+            teaching_point_en=request.teaching_point_en,
+            teaching_point_ar=request.teaching_point_ar,
+            context=request.context,
+            question_type=request.question_type,
+            number_of_distractors=request.number_of_distractors,
+            number_of_correct_answers=request.number_of_correct_answers,
+            language=request.language,
+            bloom_level=request.bloom_level
+        )
+        
+        # Return BAML result directly (will be auto-serialized)
+        logger.info(f"✅ Successfully generated {len(baml_result.questions)} questions via BAML")
+        return baml_result.model_dump()
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in generate_questions_baml_native: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Question generation failed: {str(e)}")
 
-# Health check for the service
+@app.post("/generate", response_model=Dict[str, Any])
+async def generate_text(query: LegacyQuery):
+    """
+    Legacy endpoint - now powered by BAML
+    Generate text based on a custom prompt
+    """
+    try:
+        # For backward compatibility, we'll try to extract teaching point from prompt
+        # and generate a simple question
+        logger.info("📤 Legacy endpoint called - converting to BAML")
+        
+        result = await baml_service.generate_questions_async(
+            teaching_point_en=query.prompt,
+            teaching_point_ar="",
+            context=None,
+            question_type="MULTICHOICE",
+            number_of_distractors=3,
+            number_of_correct_answers=None,
+            language="en",
+            bloom_level="UNDERSTAND"
+        )
+        
+        # Convert to simple text response for legacy compatibility
+        questions_text = ""
+        for i, q in enumerate(result.questions, 1):
+            questions_text += f"Question {i}: {q.question}\n"
+            for opt in q.options:
+                questions_text += f"{opt.key}) {opt.value}\n"
+            questions_text += f"Answer: {', '.join(q.answer)}\n\n"
+        
+        return {"response": questions_text.strip()}
+        
+    except Exception as e:
+        logger.error(f"❌ Error in legacy generate_text: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Text generation failed: {str(e)}")
+
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for monitoring"""
-    return {
-        "status": "healthy",
-        "service": "AFADI Question Generation API",
-        "version": "1.0.0"
-    }
+    """Comprehensive health check including BAML connectivity"""
+    try:
+        # Test BAML connection
+        baml_status = await baml_service.test_connection()
+        
+        return {
+            "status": "healthy" if baml_status else "degraded",
+            "service": "AFADI Question Generation API (BAML-only)",
+            "version": "3.0.0",
+            "baml_enabled": True,
+            "baml_connection": "ok" if baml_status else "failed",
+            "legacy_api_support": True
+        }
+    except Exception as e:
+        logger.error(f"❌ Health check failed: {str(e)}")
+        return {
+            "status": "unhealthy",
+            "service": "AFADI Question Generation API (BAML-only)",
+            "version": "3.0.0",
+            "baml_enabled": True,
+            "baml_connection": "error",
+            "error": str(e)
+        }
+
+@app.get("/baml-status")
+async def baml_status():
+    """Detailed BAML status check"""
+    try:
+        connection_ok = await baml_service.test_connection()
+        
+        return {
+            "baml_client_available": True,
+            "connection_test": "passed" if connection_ok else "failed",
+            "generate_questions_function": "available",
+            "supported_question_types": [
+                "MULTICHOICE", 
+                "MULTI_SELECT", 
+                "TRUE_FALSE", 
+                "TRUE_FALSE_JUSTIFICATION"
+            ],
+            "supported_languages": ["en", "ar"],
+            "supported_bloom_levels": [
+                "REMEMBER", "UNDERSTAND", "APPLY", 
+                "ANALYZE", "EVALUATE", "CREATE"
+            ]
+        }
+    except Exception as e:
+        return {
+            "baml_client_available": False,
+            "error": str(e),
+            "suggestion": "Check BAML configuration and LLM connectivity"
+        }
 
 if __name__ == "__main__":
-    # Run with uvicorn with optimized settings
     uvicorn.run(
         app, 
         host="0.0.0.0",

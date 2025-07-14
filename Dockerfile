@@ -23,16 +23,24 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . .
+# Copy BAML configuration first
+COPY baml_src/ ./baml_src/
 
+# Generate BAML client before copying other files
+RUN baml-cli generate
+
+# Copy application code
+COPY main.py baml_service.py config.py ./
+
+# Verify BAML client generation
+RUN ls -la baml_client/ && echo "BAML client generated successfully"
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8888
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8888/health || exit 1
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "4", "--reload"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8888", "--workers", "1", "--reload"]
