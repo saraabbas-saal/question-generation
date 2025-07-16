@@ -13,6 +13,7 @@ class GeneratedQuestion {
 }
 
 class QuestionGenerationResult {
+  
   questions GeneratedQuestion[]
   teaching_point string
   question_type string
@@ -33,7 +34,8 @@ function GenerateQuestions(
 ) -> QuestionGenerationResult {
   client "VLLM"
   prompt #"
-    You are an expert educational content creator. Generate exactly 3 questions based on the teaching point provided.
+    You are an expert military instructor generating questions for your students. Generate exactly 3 questions based on the teaching point provided.
+
 
     **Teaching Point (English):** {{ teaching_point_en }}
     **Teaching Point (Arabic):** {{ teaching_point_ar }}
@@ -45,6 +47,15 @@ function GenerateQuestions(
     {% if number_of_distractors %}**Number of Distractors:** {{ number_of_distractors }}{% endif %}
     {% if number_of_correct_answers %}**Number of Correct Answers:** {{ number_of_correct_answers }}{% endif %}
 
+
+    **Bloom's Taxonomy Guidelines:**
+    - REMEMBER: Recall facts, basic concepts, answers
+    - UNDERSTAND: Explain ideas, concepts, summarize
+    - APPLY: Use information in new situations
+    - ANALYZE: Draw connections, examine and break down
+    - EVALUATE: Justify decisions or opinions
+    - CREATE: Produce new or original work
+    
     **INSTRUCTIONS:**
     1. Generate exactly 3 questions that test the teaching point at the {{ bloom_level }} level
     2. Questions should be in {{ language }} language (English if "en", Arabic if "ar")
@@ -73,14 +84,6 @@ function GenerateQuestions(
     - Answer format: ["A"] or ["B"]
     - explanation should contain a detailed explanation/justification
     {% endif %}
-
-    **Bloom's Taxonomy Guidelines:**
-    - REMEMBER: Recall facts, basic concepts, answers
-    - UNDERSTAND: Explain ideas, concepts, summarize
-    - APPLY: Use information in new situations
-    - ANALYZE: Draw connections, examine and break down
-    - EVALUATE: Justify decisions or opinions
-    - CREATE: Produce new or original work
 
     **Output Requirements:**
     - Always return exactly 3 questions

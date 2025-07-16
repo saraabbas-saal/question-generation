@@ -14,6 +14,21 @@ client<llm> VLLM {
   }
 }
 
+client<llm> VLLM2 {
+  provider "openai-generic"
+  options {
+    base_url env.OPENAI_API_URL
+    api_key env.OPENAI_API_KEY
+    model env.OPENAI_MODEL
+    default_role "user" // Required for using VLLM
+    temperature 0
+    top_p 0.8
+    top_k 20
+    repetition_penalty 1.05
+    seed 123
+  }
+}
+
 // https://docs.boundaryml.com/docs/snippets/clients/retry
 retry_policy Constant {
   max_retries 3
