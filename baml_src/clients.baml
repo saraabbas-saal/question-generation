@@ -2,9 +2,9 @@
 client<llm> VLLM {
   provider "openai-generic"
   options {
-    base_url env.OPENAI_API_URL
-    api_key env.OPENAI_API_KEY
-    model env.OPENAI_MODEL
+    base_url env.MODEL_HOST
+    api_key env.MODEL_API_KEY
+    model env.MODEL_NAME
     default_role "user" // Required for using VLLM
     temperature 0.7
     top_p 0.8
@@ -17,9 +17,9 @@ client<llm> VLLM {
 client<llm> VLLM2 {
   provider "openai-generic"
   options {
-    base_url env.OPENAI_API_URL
-    api_key env.OPENAI_API_KEY
-    model env.OPENAI_MODEL
+    base_url env.MODEL_HOST
+    api_key env.MODEL_API_KEY
+    model env.MODEL_NAME
     default_role "user" // Required for using VLLM
     temperature 0
     top_p 0.8

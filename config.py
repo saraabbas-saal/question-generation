@@ -31,10 +31,10 @@ def get_env(key: str, default: str = None) -> str:
 
 # LLM Configuration
 MODEL_HOST = get_env("MODEL_HOST", "http://192.168.71.70:8000")
-MODEL_OPEN_AI_KEY = get_env("MODEL_OPEN_AI_KEY", "123")
-DEFAULT_MODEL = get_env("DEFAULT_MODEL", "sayed0am/Adept-14B-AWQ")
+MODEL_API_KEY = get_env("MODEL_API_KEY", "123")
+MODEL_NAME = get_env("MODEL_NAME", "sayed0am/Adept-14B-AWQ")
 
 # BAML Configuration
-os.environ["OPENAI_API_URL"] = MODEL_HOST
-os.environ["OPENAI_API_KEY"] = MODEL_OPEN_AI_KEY
-os.environ["OPENAI_MODEL"] = DEFAULT_MODEL
+os.environ["MODEL_HOST"] = MODEL_HOST
+os.environ["MODEL_API_KEY"] = MODEL_API_KEY
+os.environ["MODEL_NAME"] = MODEL_NAME

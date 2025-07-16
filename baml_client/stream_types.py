@@ -12,71 +12,53 @@
 
 import typing
 import typing_extensions
-from enum import Enum
-
-
 from pydantic import BaseModel, ConfigDict
-
 
 import baml_py
 
-CheckT = typing_extensions.TypeVar('CheckT')
-CheckName = typing_extensions.TypeVar('CheckName', bound=str)
+from . import types
 
-class Check(BaseModel):
-    name: str
-    expression: str
-    status: str
-class Checked(BaseModel, typing.Generic[CheckT, CheckName]):
-    value: CheckT
-    checks: typing.Dict[CheckName, Check]
-
-def get_checks(checks: typing.Dict[CheckName, Check]) -> typing.List[Check]:
-    return list(checks.values())
-
-def all_succeeded(checks: typing.Dict[CheckName, Check]) -> bool:
-    return all(check.status == "succeeded" for check in get_checks(checks))
-# #########################################################################
-# Generated enums (0)
-# #########################################################################
-
+StreamStateValueT = typing.TypeVar('StreamStateValueT')
+class StreamState(BaseModel, typing.Generic[StreamStateValueT]):
+    value: StreamStateValueT
+    state: typing_extensions.Literal["Pending", "Incomplete", "Complete"]
 # #########################################################################
 # Generated classes (6)
 # #########################################################################
 
 class ClosestAbbreviation(BaseModel):
-    original: str
-    closest: str
-    confidence: str
+    original: typing.Optional[str] = None
+    closest: typing.Optional[str] = None
+    confidence: typing.Optional[str] = None
     decoding: typing.Dict[str, str]
-    reasoning: str
+    reasoning: typing.Optional[str] = None
 
 class GeneratedQuestion(BaseModel):
-    question_number: int
-    question: str
+    question_number: typing.Optional[int] = None
+    question: typing.Optional[str] = None
     options: typing.List["QuestionOption"]
     answer: typing.List[str]
     explanation: typing.Optional[str] = None
 
 class QuestionGenerationResult(BaseModel):
     questions: typing.List["GeneratedQuestion"]
-    teaching_point: str
-    question_type: str
-    language: str
-    bloom_level: str
+    teaching_point: typing.Optional[str] = None
+    question_type: typing.Optional[str] = None
+    language: typing.Optional[str] = None
+    bloom_level: typing.Optional[str] = None
 
 class QuestionOption(BaseModel):
-    key: str
-    value: str
+    key: typing.Optional[str] = None
+    value: typing.Optional[str] = None
 
 class TeachingMaterial(BaseModel):
-    text_en: str
-    text_ar: str
+    text_en: typing.Optional[str] = None
+    text_ar: typing.Optional[str] = None
     context: typing.Optional[str] = None
 
 class WeatherAPI(BaseModel):
-    city: str
-    timeOfDay: str
+    city: typing.Optional[str] = None
+    timeOfDay: typing.Optional[str] = None
 
 # #########################################################################
 # Generated type aliases (0)

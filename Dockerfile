@@ -24,16 +24,13 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
 # Copy BAML configuration first
-COPY baml_src/ ./baml_src/
+
+COPY . .
 
 # Generate BAML client before copying other files
 RUN baml-cli generate
 
 # Copy application code
-COPY main.py baml_service.py config.py ./
-
-# Verify BAML client generation
-RUN ls -la baml_client/ && echo "BAML client generated successfully"
 
 # Expose port
 EXPOSE 8888
